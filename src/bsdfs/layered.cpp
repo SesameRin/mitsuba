@@ -27,10 +27,18 @@
     times a top-Fresnel branching factor); the path tracer only needs
     a sufficiently-correct PDF for the MIS heuristic.
 
-    Components:
+    Components (front-side only — opaque-bottom slab is one-sided):
       0  EGlossyReflection    -- random-walk reflection lobe
-      1  EGlossyTransmission  -- always zero with an opaque bottom BSDF
-      2  EDeltaReflection     -- top dielectric Fresnel mirror
+      1  EDeltaReflection     -- top dielectric Fresnel mirror
+
+    XML schema is dual-form:
+      * Native form: extIOR/intIOR floats, sigmaA/sigmaS spectra,
+        nested <bsdf> child for the bottom, optional <phase> child.
+      * Reference form (Guo et al. 2018, e.g. figure8 paper scenes):
+        nbLayers=2, <bsdf name="surface_0"> for the top dielectric
+        (we extract its IOR; roughness is dropped), <bsdf
+        name="surface_1"> for the bottom, sigmaT_0/albedo_0 spectra,
+        <phase name="phase_0"> for the phase function.
 
     Conventions:
       * z = 0  : top of the slab (air side, exterior)
@@ -69,11 +77,45 @@ public:
         m_sigmaA = props.getSpectrum("sigmaA", Spectrum(0.0f));
         m_sigmaS = props.getSpectrum("sigmaS", Spectrum(0.0f));
 
+        /* Reference position-free MC schema (Guo et al. 2018):
+             sigmaT_0  = extinction
+             albedo_0  = single-scattering albedo
+           If both are present, derive sigmaA/sigmaS from them so
+           paper scene XMLs (e.g. figure8, teaser) drop in directly. */
+        bool hasSigmaT  = props.hasProperty("sigmaT_0");
+        bool hasAlbedo  = props.hasProperty("albedo_0");
+        if (hasSigmaT || hasAlbedo) {
+            Spectrum sT = props.getSpectrum("sigmaT_0", Spectrum(1.0f));
+            Spectrum al = props.getSpectrum("albedo_0", Spectrum(1.0f));
+            m_sigmaS = sT * al;
+            m_sigmaA = sT * (Spectrum(1.0f) - al);
+        }
+
         m_maxDepth = props.getInteger("maxDepth", 64);
         m_rrDepth  = props.getInteger("rrDepth", 5);
 
         m_specularReflectance = props.getSpectrum("specularReflectance",
                                                   Spectrum(1.0f));
+
+        /* Number of *surfaces* (not media). We only support 2 (one
+           top dielectric + one bottom BSDF); larger N will be treated
+           as a configuration error so the user notices. */
+        m_nbLayers = props.getInteger("nbLayers", 2);
+        if (m_nbLayers != 2)
+            Log(EError, "LayeredBSDF: only nbLayers=2 (one medium between "
+                "two surfaces) is supported. Got nbLayers=%i.", m_nbLayers);
+
+        /* Reference-schema flags we silently accept and ignore — they
+           only matter for the bidirectional / stochastic-pdf paths in
+           the paper plugin, which we approximate. */
+        for (const char *k : { "MIS", "bidir", "bidirUseAnalog",
+                               "pdfRepetitive", "stochPdfDepth",
+                               "diffusePdf", "maxSurvivalProb",
+                               "multilayer" }) {
+            if (props.hasProperty(k)) (void) k; /* parsed-then-ignored */
+        }
+        if (props.hasProperty("pdf"))
+            (void) props.getString("pdf"); /* same */
     }
 
     LayeredBSDF(Stream *stream, InstanceManager *manager)
@@ -85,6 +127,7 @@ public:
         m_specularReflectance = Spectrum(stream);
         m_maxDepth = stream->readInt();
         m_rrDepth  = stream->readInt();
+        m_nbLayers = stream->readInt();
         m_nested = static_cast<BSDF *>(manager->getInstance(stream));
         m_phase  = static_cast<PhaseFunction *>(manager->getInstance(stream));
         m_invEta = 1.0f / m_eta;
@@ -100,11 +143,27 @@ public:
         m_specularReflectance.serialize(stream);
         stream->writeInt(m_maxDepth);
         stream->writeInt(m_rrDepth);
+        stream->writeInt(m_nbLayers);
         manager->serialize(stream, m_nested.get());
         manager->serialize(stream, m_phase.get());
     }
 
     void configure() {
+        /* If a top-interface BSDF was supplied via `surface_0`, take
+           its relative IOR. We don't model its roughness — paper
+           figure8 uses alpha values down to 0.005 (near-smooth) for
+           which a smooth dielectric is a close visual approximation. */
+        if (m_topSurface != NULL) {
+            Float topEta = m_topSurface->getEta();
+            if (topEta > 0 && topEta != 1.0f) {
+                m_eta    = topEta;
+                m_invEta = 1.0f / m_eta;
+            } else {
+                Log(EWarn, "LayeredBSDF: surface_0 child has eta=%f; "
+                    "falling back to extIOR/intIOR.", topEta);
+            }
+        }
+
         if (m_phase == NULL)
             m_phase = static_cast<PhaseFunction *>(PluginManager::getInstance()
                 ->createObject(MTS_CLASS(PhaseFunction), Properties("isotropic")));
@@ -120,20 +179,26 @@ public:
         m_sigmaTavg    = m_sigmaT.average();
         m_hasMedium    = (m_sigmaTavg > 0);
 
+        /* Component layout. We expose the random-walk lobe and the
+           top mirror only — opaque bottom never produces a transmission
+           sample, so we don't advertise EGlossyTransmission. The plugin
+           is also marked front-side only: a back-side hit on a slab
+           with an opaque base is unphysical and would otherwise be
+           handled by an unprincipled axis flip. */
         m_components.clear();
-        m_components.push_back(EGlossyReflection   | EFrontSide | EBackSide
+        m_components.push_back(EGlossyReflection | EFrontSide
                                | EUsesSampler | ENonSymmetric);
-        m_components.push_back(EGlossyTransmission | EFrontSide | EBackSide
-                               | EUsesSampler | ENonSymmetric);
-        m_components.push_back(EDeltaReflection    | EFrontSide | EBackSide);
+        m_components.push_back(EDeltaReflection  | EFrontSide);
 
         m_usesRayDifferentials = false;
 
+        /* Heuristic specular-sampling weight: bias toward the mirror
+           lobe when the slab's diffuse contribution is small (highly
+           absorbing medium). */
         Float avgAttn = 1.0f;
         if (m_hasMedium)
             avgAttn = (-m_sigmaT * (2.0f * m_thickness)).exp().average();
-
-        Float scoreNested = (1.0f - 0.5f) + 0.5f * avgAttn;
+        Float scoreNested = 0.5f + 0.5f * avgAttn;
         m_specularSamplingWeight = 1.0f / (1.0f + scoreNested);
 
         BSDF::configure();
@@ -142,9 +207,23 @@ public:
     void addChild(const std::string &name, ConfigurableObject *child) {
         const Class *cClass = child->getClass();
         if (cClass->derivesFrom(MTS_CLASS(BSDF))) {
-            if (m_nested != NULL)
-                Log(EError, "LayeredBSDF: only one nested BSDF child allowed");
-            m_nested = static_cast<BSDF *>(child);
+            /* Reference schema names: surface_0 is the top dielectric
+               (we extract its IOR in configure()); surface_1 is the
+               bottom (nested) BSDF. Unnamed children behave as the
+               nested BSDF (back-compat). */
+            if (name == "surface_0") {
+                if (m_topSurface != NULL)
+                    Log(EError, "LayeredBSDF: duplicate surface_0 child");
+                m_topSurface = static_cast<BSDF *>(child);
+            } else if (name == "surface_1") {
+                if (m_nested != NULL)
+                    Log(EError, "LayeredBSDF: duplicate surface_1/nested child");
+                m_nested = static_cast<BSDF *>(child);
+            } else {
+                if (m_nested != NULL)
+                    Log(EError, "LayeredBSDF: only one nested BSDF child allowed");
+                m_nested = static_cast<BSDF *>(child);
+            }
         } else if (cClass->derivesFrom(MTS_CLASS(PhaseFunction))) {
             if (m_phase != NULL)
                 Log(EError, "LayeredBSDF: only one phase-function child allowed");
@@ -157,7 +236,7 @@ public:
     Float getEta() const { return 1.0f; }
 
     Float getRoughness(const Intersection &its, int component) const {
-        if (component == 2) return 0.0f;
+        if (component == 1) return 0.0f;
         return std::numeric_limits<Float>::infinity();
     }
 
@@ -222,17 +301,17 @@ public:
                  "LayeredBSDF requires a sampler in the BSDFSamplingRecord");
 
         bool sampleSpecular = (bRec.typeMask & EDeltaReflection)
-            && (bRec.component == -1 || bRec.component == 2);
-        bool sampleGlossy = ((bRec.typeMask & (EGlossyReflection | EGlossyTransmission)) != 0)
-            && (bRec.component == -1 || bRec.component == 0 || bRec.component == 1);
+            && (bRec.component == -1 || bRec.component == 1);
+        bool sampleGlossy = ((bRec.typeMask & EGlossyReflection) != 0)
+            && (bRec.component == -1 || bRec.component == 0);
 
         if (!sampleSpecular && !sampleGlossy)
             return Spectrum(0.0f);
 
-        Vector wi = bRec.wi;
-        bool flipped = Frame::cosTheta(wi) < 0;
-        if (flipped) wi.z = -wi.z;
-
+        /* Front-side only: opaque bottom + horizontally-homogeneous slab
+           is one-sided. Back-side queries return zero, matching the
+           component flags advertised in configure(). */
+        const Vector &wi = bRec.wi;
         Float cosThetaI = Frame::cosTheta(wi);
         if (cosThetaI <= 0)
             return Spectrum(0.0f);
@@ -265,9 +344,8 @@ public:
 
         if (chooseSpecular) {
             bRec.wo = reflectZ(wi);
-            if (flipped) bRec.wo.z = -bRec.wo.z;
             bRec.eta = 1.0f;
-            bRec.sampledComponent = 2;
+            bRec.sampledComponent = 1;
             bRec.sampledType = EDeltaReflection;
             pdf = (sampleSpecular && sampleGlossy) ? probSpecular : 1.0f;
             return m_specularReflectance * (R12 / pdf);
@@ -353,7 +431,6 @@ public:
                            m_eta when going from slab to air. */
                         Vector woAir(m_eta * dir.x, m_eta * dir.y, -cosOutT);
                         bRec.wo = woAir;
-                        if (flipped) bRec.wo.z = -bRec.wo.z;
                         /* Solid-angle compression Jacobian. */
                         Float saJac = m_invEta * m_invEta *
                                       std::abs(woAir.z) /
@@ -389,14 +466,18 @@ public:
         if (!exited)
             return Spectrum(0.0f);
 
-        bRec.eta = 1.0f;
-        Vector wo_unflipped = bRec.wo;
-        if (flipped) wo_unflipped.z = -wo_unflipped.z;
-        bRec.sampledComponent = (Frame::cosTheta(wo_unflipped) > 0) ? 0 : 1;
-        bRec.sampledType = (bRec.sampledComponent == 0)
-            ? EGlossyReflection : EGlossyTransmission;
+        if (Frame::cosTheta(bRec.wo) <= 0) {
+            /* Walk exited downward — only possible if the nested BSDF
+               sampled a transmission. We don't advertise that lobe and
+               the path tracer would mis-MIS it; drop. */
+            return Spectrum(0.0f);
+        }
 
-        pdf = pdfImpl(wi, wo_unflipped, R12, sampleSpecular, sampleGlossy);
+        bRec.eta = 1.0f;
+        bRec.sampledComponent = 0;
+        bRec.sampledType = EGlossyReflection;
+
+        pdf = pdfImpl(wi, bRec.wo, R12, sampleSpecular, sampleGlossy);
         if (!std::isfinite(pdf) || pdf <= 0)
             return Spectrum(0.0f);
 
@@ -414,16 +495,14 @@ public:
 
     Float pdf(const BSDFSamplingRecord &bRec, EMeasure measure) const {
         bool sampleSpecular = (bRec.typeMask & EDeltaReflection)
-            && (bRec.component == -1 || bRec.component == 2);
-        bool sampleGlossy = ((bRec.typeMask & (EGlossyReflection | EGlossyTransmission)) != 0)
-            && (bRec.component == -1 || bRec.component == 0 || bRec.component == 1);
+            && (bRec.component == -1 || bRec.component == 1);
+        bool sampleGlossy = ((bRec.typeMask & EGlossyReflection) != 0)
+            && (bRec.component == -1 || bRec.component == 0);
 
-        Vector wi = bRec.wi, wo = bRec.wo;
-        bool flipped = Frame::cosTheta(wi) < 0;
-        if (flipped) { wi.z = -wi.z; wo.z = -wo.z; }
+        const Vector &wi = bRec.wi, &wo = bRec.wo;
 
         Float cosThetaI = Frame::cosTheta(wi);
-        if (cosThetaI <= 0)
+        if (cosThetaI <= 0 || Frame::cosTheta(wo) <= 0)
             return 0.0f;
 
         Float R12 = fresnelDielectricExt(cosThetaI, m_eta);
@@ -478,14 +557,11 @@ public:
 
     Spectrum eval(const BSDFSamplingRecord &bRec, EMeasure measure) const {
         bool sampleSpecular = (bRec.typeMask & EDeltaReflection)
-            && (bRec.component == -1 || bRec.component == 2);
-        bool sampleGlossy = ((bRec.typeMask & (EGlossyReflection | EGlossyTransmission)) != 0)
-            && (bRec.component == -1 || bRec.component == 0 || bRec.component == 1);
+            && (bRec.component == -1 || bRec.component == 1);
+        bool sampleGlossy = ((bRec.typeMask & EGlossyReflection) != 0)
+            && (bRec.component == -1 || bRec.component == 0);
 
-        Vector wi = bRec.wi, wo = bRec.wo;
-        bool flipped = Frame::cosTheta(wi) < 0;
-        if (flipped) { wi.z = -wi.z; wo.z = -wo.z; }
-
+        const Vector &wi = bRec.wi, &wo = bRec.wo;
         Float cosThetaI = Frame::cosTheta(wi);
         Float cosThetaO = Frame::cosTheta(wo);
 
@@ -516,26 +592,25 @@ public:
         if (cosI <= 0 || cosO <= 0)
             return Spectrum(0.0f);
 
+        /* The IOR Jacobian factors: (a) saJac substitutes the
+           nested-BSDF's cos(woSlab) for cos(wo_air) * invEta^2,
+           accounting for solid-angle compression as we exit the
+           slab. (b) topT is the product of two Fresnel transmittances
+           — one entering, one exiting the top dielectric. */
         const Float saJac = m_invEta * m_invEta * cosThetaO / cosO;
         const Float topT  = (1.0f - R12) * (1.0f - R21);
 
         Spectrum result(0.0f);
 
-        /* ----- bottom BSDF contribution (ballistic transit) ----- */
+        /* ----- bottom BSDF (ballistic transit through the slab) ----- */
         BSDFSamplingRecord nestedRec(bRec.its, wiSlab, woSlab, bRec.mode);
         Spectrum nestedF = m_nested->eval(nestedRec, ESolidAngle);
         if (!nestedF.isZero()) {
             Spectrum trans = transmittance(m_thickness * (1.0f / cosI + 1.0f / cosO));
             result += nestedF * trans * topT * saJac;
-            /* nestedF already includes cos(theta_woSlab); the saJac factor
-               replaces it with cos(theta_o_air) and applies the IOR
-               compression. */
-            /* Correct: undo the cos(woSlab) and multiply by cos(wo_air). */
-            /* nestedF * saJac = nested_f * cos(woSlab) * invEta^2 * cos(wo_air)/cos(woSlab)
-                              = nested_f * invEta^2 * cos(wo_air). */
         }
 
-        /* ----- single-scatter (HK) contribution ----- */
+        /* ----- single-scatter (Hanrahan–Krueger) ----- */
         if (m_hasMedium && !m_sigmaS.isZero()) {
             PhaseFunctionSamplingRecord pRec(MediumSamplingRecord(),
                 wiSlab, woSlab, bRec.mode);
@@ -549,8 +624,9 @@ public:
                 Spectrum hk = albedo * (phaseVal * cosI / (cosI + cosO)) *
                     (Spectrum(1.0f) -
                      ((-1.0f / cosI - 1.0f / cosO) * tauD).exp());
-                /* HK normally returns hk * cos(wo). Combined with saJac,
-                   the cos(wo_slab) is replaced by cos(wo_air) * invEta^2. */
+                /* hk*cosO has units of f*cos(wo_slab); saJac replaces
+                   that with f*cos(wo_air)*invEta^2 as required by the
+                   solid-angle convention used by the integrator. */
                 result += hk * cosO * topT * saJac;
             }
         }
@@ -585,7 +661,9 @@ private:
     bool m_hasMedium;
     Spectrum m_specularReflectance;
     int m_maxDepth, m_rrDepth;
+    int m_nbLayers;
     Float m_specularSamplingWeight;
+    ref<BSDF> m_topSurface; ///< Optional top BSDF; we extract its IOR.
     ref<BSDF> m_nested;
     ref<PhaseFunction> m_phase;
 };

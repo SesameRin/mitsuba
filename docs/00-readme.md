@@ -10,11 +10,21 @@ to prepare for two implementation tasks:
    layered material (e.g. a refined spot/directional light for grazing-angle
    Fresnel showcasing).
 
-> **Status:** both tasks are implemented. See
+> **Status:** both tasks are implemented and have been revised after a
+> reading of the reference position-free MC plugin
+> ([`08-reference-multilayered.md`](08-reference-multilayered.md)). See
 > [`06-layered-bsdf-task.md` §6.11](06-layered-bsdf-task.md#611-what-was-actually-implemented)
-> for what shipped versus what was deferred. The plugin sources are
-> `src/bsdfs/layered.cpp` and `src/emitters/grazing.cpp`; demo scenes
-> are in `scenes/`.
+> for what originally shipped, [§6.12](06-layered-bsdf-task.md#612-v2-revisions-after-reading-the-reference)
+> for the v2 revisions, [§6.13](06-layered-bsdf-task.md#613-rendering-the-paper-scenes-scene_data-zips)
+> for instructions on rendering the paper scenes (`scene_data/figure8.zip`),
+> and [§6.14](06-layered-bsdf-task.md#614-hero-showcase-scene-sceneslayered_heroxml)
+> for the single-image hero showcase that puts both deliverables —
+> the layered BSDF and the grazing emitter — into one render
+> (`scenes/layered_hero.xml` → `scenes/scene_data/output/layered_hero.png`).
+> The plugin sources are `src/bsdfs/layered.cpp` and
+> `src/emitters/grazing.cpp`; demo scenes are in `scenes/`, and adapted
+> paper scenes plus their pre-rendered outputs are in
+> `scenes/scene_data/`.
 
 The order I suggest reading them:
 
@@ -27,6 +37,7 @@ The order I suggest reading them:
 | `05-build-and-plugin-system.md` | SCons, `MTS_EXPORT_PLUGIN`, `setpath.sh`, where built `.so` files end up, how to add a new plugin. |
 | `06-layered-bsdf-task.md` | Concrete plan for the LayeredBSDF + custom emitter tasks: theory, files to create, milestones, how to test. |
 | `07-testing.md` | How to validate the shipped LayeredBSDF + grazing emitter: setup, the three test scenes, the chi-square test, and a failure-mode cheat sheet. |
+| `08-reference-multilayered.md` | Pointer to the SIGGRAPH Asia 2018 position-free MC reference implementation in `../layeredbsdf/`: core files, data, where to fetch the paper's example scenes. |
 
 > Mitsuba 0.6 is the same code-base as Mitsuba 0.5/0.4 in spirit — most of
 > the academic literature on Mitsuba (e.g. Wenzel Jakob's thesis, the

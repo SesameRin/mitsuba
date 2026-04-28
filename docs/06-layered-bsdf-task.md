@@ -329,13 +329,13 @@ with reasonable fidelity by recursively nesting `<bsdf type="layered"/>`
 children, since the inner layered BSDF runs its own walk — at the cost
 of an extra index-matched fictitious interface.)
 
-Components exposed by the plugin:
+Components exposed by the plugin (front-side only after the v2 revision —
+see §6.12):
 
 | Idx | Flags                                                  | Meaning                              |
 | --- | ------------------------------------------------------ | ------------------------------------ |
-| 0   | `EGlossyReflection \| EFront \| EBack \| EUsesSampler` | random-walk reflection lobe          |
-| 1   | `EGlossyTransmission` (same flags)                     | reserved for non-opaque bottom BSDFs |
-| 2   | `EDeltaReflection \| EFront \| EBack`                  | top dielectric Fresnel mirror        |
+| 0   | `EGlossyReflection \| EFrontSide \| EUsesSampler \| ENonSymmetric` | random-walk reflection lobe          |
+| 1   | `EDeltaReflection \| EFrontSide`                       | top dielectric Fresnel mirror        |
 
 ### `sample()` — the random walk
 
@@ -456,3 +456,233 @@ mtsutil test_chisquare           # uses data/tests/test_bsdf.xml by default
   directions because our `pdf()` is the cosine-weighted approximation;
   fixing this requires either a Belcour-style cumulant fit or
   Bitterli–Jarosz constructive PDFs (§6.4 options 2/3).
+
+---
+
+## 6.12 v2 revisions (after reading the reference)
+
+After reading `multilayered.cpp` (the SIGGRAPH 2018 production plugin —
+see `08-reference-multilayered.md`), the local plugin was tightened in
+four ways:
+
+1. **Reference-schema XML compatibility.** `LayeredBSDF` now also
+   parses the paper plugin's parameter names: `nbLayers=2`,
+   `<bsdf name="surface_0">` (top — we extract its IOR via
+   `bsdf->getEta()`), `<bsdf name="surface_1">` (bottom — used as the
+   nested BSDF), `<spectrum name="sigmaT_0">` + `<spectrum name="albedo_0">`
+   (we derive `sigmaA = sigmaT*(1-albedo)` and `sigmaS = sigmaT*albedo`),
+   and `<phase name="phase_0">`. Reference-only flags (`bidir`, `pdf`,
+   `stochPdfDepth`, `bidirUseAnalog`, `pdfRepetitive`, …) are accepted
+   silently and ignored. **The practical effect**: the figure8 paper
+   scenes drop in directly with only two textual rewrites — `path_layered`
+   → `path` and `multilayered` → `layered`. (See §6.13 for the
+   instructions.)
+
+2. **Front-side-only components.** The previous version exposed
+   `EGlossyReflection | EFrontSide | EBackSide` plus a stub
+   `EGlossyTransmission`. Back-side incidence on a slab with an opaque
+   base is unphysical; the old code handled it by mirroring `wi.z` and
+   pretending the back was the front, which is correct only for a
+   symmetric stack. The opaque-bottom configuration has no symmetry
+   guarantee, so v2 simply declares the BSDF one-sided
+   (`EFrontSide` only) and short-circuits back-side queries to zero.
+   The unused `EGlossyTransmission` component is dropped — the path
+   tracer was occasionally spending NEE budget on a lobe that always
+   returned 0.
+
+3. **Sample-component indices renumbered.** With the transmission lobe
+   gone, `EDeltaReflection` is now component 1 (was 2). `getRoughness()`
+   was updated to match. The serialized stream version now also stores
+   `m_nbLayers` for round-tripping the schema.
+
+4. **Heuristic specular-sampling weight cleanup.** Replaced the dead
+   `(1 - 0.5)` term with a clearer `0.5 + 0.5 * avgAttn` so the
+   intent — bias toward the mirror lobe when the slab transmits little
+   light — is obvious from the source.
+
+### What v2 deliberately does *not* do
+
+* **No bi-directional / stochastic-pdf eval.** The reference's
+  `bidirStochTRT` mode requires a `Sampler` inside `eval()`, which the
+  stock `path` integrator does not pass; the reference ships its own
+  `path_layered` integrator that adds `bRec.sampler = rRec.sampler`
+  during NEE. We could port that integrator, but a custom integrator
+  would no longer be a drop-in for vanilla Mitsuba. The hybrid
+  analytic-eval / MC-sample design here keeps the BSDF compatible with
+  every Mitsuba integrator that does NEE, at the cost of slightly
+  higher variance on highly forward-scattering slabs.
+
+* **No microfacet top interface.** The figure8 scenes use
+  `roughdielectric` with α as low as 0.005 (visually near-smooth), so
+  modelling the top as a smooth dielectric loses very little fidelity.
+  α=0.1 (one of the figure8 plates) is a more visible discrepancy; the
+  reference renders it with an actual GGX-distributed top whereas we
+  fall back to smooth + Fresnel.
+
+* **No per-layer `surface_*` for N>2.** `nbLayers` other than 2 is
+  refused at parse time. The reference's true multi-layer support
+  (per-internal-interface IOR + roughness + normal/orientation maps)
+  is a substantial extension; rendering 2-layer paper scenes does not
+  need it.
+
+---
+
+## 6.13 Rendering the paper scenes (`scene_data/` zips)
+
+Two paper-scene archives ship in `scene_data/`: `figure8.zip` (small,
+4-plate Veach MI test — the v2-renderable one) and `teaser.zip`
+(large, anisotropic-medium tablecloth + vases — depends on
+`microflake` phase, instanced textures, the `damask4_info.dat` block
+file, and other reference-only machinery; **not renderable** with
+this plugin without porting more of `multilayered.cpp`).
+
+The rest of this section is the figure8 recipe.
+
+### One-time setup
+
+```bash
+cd /home/ula/pbr/mitsuba/scene_data
+unzip -o figure8.zip -d figure8/        # → figure8/{mi_*.xml, meshes/}
+```
+
+The repo already contains adapted scenes at
+`scenes/scene_data/figure8/`. They are byte-equivalent to the upstream
+XMLs except for two `sed` rewrites:
+
+```
+type="path_layered"   → type="path"
+type="multilayered"   → type="layered"
+```
+
+`scenes/scene_data/figure8/meshes` is a symlink into the unzipped
+`scene_data/figure8/meshes/`, so unzipping is a hard prerequisite.
+
+### Rendering
+
+```bash
+cd /home/ula/pbr/mitsuba
+source setpath.sh
+mitsuba scenes/scene_data/figure8/mi_acr_left.xml \
+        -o scenes/scene_data/output/figure8_mi_acr_left.exr
+mtsutil tonemap -o scenes/scene_data/output/figure8_mi_acr_left.png \
+        scenes/scene_data/output/figure8_mi_acr_left.exr
+```
+
+Repeat for `mi_trt_middle.xml` and `mi_noMIS_right.xml`. Render time
+is ~7s per scene at the upstream 200 spp on a 20-core machine; the
+build is single-precision OpenMP-parallelised path tracing.
+
+### Outputs
+
+Pre-rendered EXR + PNG pairs are committed at
+`scenes/scene_data/output/`:
+
+* `figure8_mi_acr_left.png` — Veach-style 4 plates × 4 area lights,
+  each plate a 2-layer dielectric+gold stack with varying combined
+  roughness. The classic test that all 16 plate-light combinations
+  receive a consistent contribution under MIS.
+* `figure8_mi_trt_middle.png` — same scene, paper's "TRT" pdf mode
+  in the upstream XML (no effect on our plugin — the flag is parsed
+  and ignored).
+* `figure8_mi_noMIS_right.png` — same scene with multilayered's
+  `MIS=false` flag (also ignored here, since the integrator-level
+  MIS in `path` is unaffected by it).
+
+### Caveats vs. the reference
+
+* All four plates in our renders share the *same* Fresnel rim
+  because we collapse the rough top dielectric to a smooth one.
+* The bottom roughness still varies (it's just a stock Mitsuba
+  `roughconductor` BSDF used as the nested base), so plates with
+  rough bottoms (`b`, `d`) differ visibly from those with smooth
+  bottoms (`a`, `c`) on the conductor highlight.
+* Variance is somewhat higher than the upstream paper plugin; that is
+  the documented trade-off of using analytic eval rather than the
+  reference's stochastic-pdf bi-directional eval.
+
+## 6.14 Hero showcase scene (`scenes/layered_hero.xml`)
+
+The figure8 plate-grid is the validation render. For a *showpiece*
+that puts both deliverables — the `layered` BSDF and the `grazing`
+emitter — into one image, the repo also ships
+`scenes/layered_hero.xml`: two classic graphics props side-by-side,
+each coated with a different layered material, lit by the grazing
+emitter.
+
+### Subjects
+
+| Hero | Mesh file | Source |
+| --- | --- | --- |
+| Stanford bunny (left) | `scenes/meshes/bunny.ply` (35947 verts / 69451 tris) | Local copy of the canonical Stanford 3D Scanning Repository bunny that ships in `data/tests/`. |
+| Newell / Utah teapot (right) | `scenes/meshes/teapot.obj` (1202 verts / 2256 tris) | Fetched from the McNopper OpenGL repo on GitHub and committed to the repo. |
+
+Both materials are 2-layer stacks built with the reference XML
+schema (`nbLayers`, `surface_0`, `sigmaT_0`, `albedo_0`, `phase_0`,
+`surface_1`):
+
+| | Top (`surface_0`) | Slab | Bottom (`surface_1`) |
+| --- | --- | --- | --- |
+| Bunny ("amber over copper") | smooth `roughdielectric`, IOR 1.5 | `sigmaT_0=1.4`, `albedo_0="0.96 0.55 0.18"`, isotropic HG | `roughconductor`, `material="Cu"`, `alpha=0.05` |
+| Teapot ("amber over gold") | smooth `roughdielectric`, IOR 1.5 | `sigmaT_0=1.8`, `albedo_0="0.97 0.65 0.22"`, isotropic HG | `roughconductor`, `material="Au"`, `alpha=0.04` |
+
+Same warm pigmented slab on both, two different metals underneath
+— the layered random walk correctly composes top + slab + bottom,
+so the bunny reads distinctly redder (copper) and the teapot
+yellower (gold) under identical lighting. That side-by-side hue
+contrast is what would be impossible to reproduce with `roughplastic`
+or any non-layered BSDF.
+
+### Lighting
+
+* **Key**: the custom `grazing` emitter at `cutoffAngle=22°`,
+  `exponent=18`, `intensity=280`, placed off-camera-right at a
+  shallow angle so its cone clips along the heroes' silhouettes
+  and excites the dielectric Fresnel peak.
+* **Fill**: dim constant environment (`radiance=0.05`) lifts the
+  shadow side just enough to read shape.
+* **Rim**: a small off-frame warm area sphere up-and-behind
+  separates the back of the heroes from the wall.
+
+### Stage
+
+Built-in `rectangle` floor and back-wall primitives (no extra
+meshes), warm-grey diffuse wall + slightly glossy near-black floor
+that picks up a subtle reflection of the heroes' undersides.
+
+### Render
+
+From `scenes/`, after `source ../setpath.sh`:
+
+```
+mitsuba layered_hero.xml -o scene_data/output/layered_hero.exr
+mtsutil tonemap -g 2.2 scene_data/output/layered_hero.exr
+```
+
+Defaults: 1280×800, 1024 spp, ldsampler, `path` integrator with
+`maxDepth=16`. ~3 minutes wall-clock on a 20-core box. The
+pre-rendered output is committed at
+`scenes/scene_data/output/layered_hero.{exr,png}`.
+
+### What the image is showing
+
+* **Body colour**: the warm interior body of each hero comes from
+  spectral absorption inside the slab — light that enters from the
+  grazing key, travels some path through the pigmented medium,
+  reflects off the metal base, and traverses the slab again on the
+  way out. Different wavelengths attenuate at different rates, so
+  the chromaticity shifts subtly with depth (most visible on the
+  bunny's belly and the teapot's underside, where the path is
+  longest).
+* **Metal hue contrast**: the bunny is copper-red, the teapot is
+  gold-yellow, despite an almost-identical absorbing slab. This is
+  the layered BSDF *composing* the slab tint with the conductor
+  Fresnel — neither object is just "tinted metal".
+* **Fresnel rim**: the bright highlights on the spout, the bunny's
+  ear and the teapot lid are the dielectric *top* layer reflecting
+  the grazing key near-tangentially. The layered BSDF preserves
+  this surface contribution alongside the volumetric one (the
+  delta/specular component of the top dielectric).
+* **Cast shadows**: the long, soft, single-edged shadows on the
+  floor are the signature of a tight cosine-power emitter — a
+  normal point or area light would scatter the boundary much more.
+

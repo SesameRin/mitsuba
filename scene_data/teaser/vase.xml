@@ -1,0 +1,329 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<scene version="0.6.0">
+	
+	<integrator type="path_layered">
+		<integer name="maxDepth" value="100"/>
+		<integer name="rrDepth" value="20"/>
+	</integrator>
+
+	<sensor type="perspective">
+		<string name="fovAxis" value="smaller"/>
+		<float name="fov" value="10"/>
+		
+		<transform name="toWorld">
+			<lookAt origin="0 -2500 800" target="0 0 20" up="0 0 1"/>
+		</transform>	
+
+		<sampler type="independent">
+			<integer name="sampleCount" value="32"/>
+		</sampler>	
+ 		
+ 		<film id="film" type="hdrfilm">
+			<integer name="width" value="1500"/>
+			<integer name="height" value="1000"/>
+			<string name="fileFormat" value="openexr"/>
+			<boolean name="banner" value="false"/>
+
+<!-- cloth -->
+<!--             <integer name="cropOffsetX" value="1020"/>
+            <integer name="cropOffsetY" value="7030"/>
+            <integer name="cropWidth" value="750"/>
+            <integer name="cropHeight" value="2000"/>
+            <integer name="width" value="15000"/>
+            <integer name="height" value="10000"/>	 -->
+
+<!-- left vase -->
+<!--             <integer name="cropOffsetX" value="3460"/>
+            <integer name="cropOffsetY" value="4740"/>
+            <integer name="cropWidth" value="750"/>
+            <integer name="cropHeight" value="2000"/>
+            <integer name="width" value="15000"/>
+            <integer name="height" value="10000"/> -->
+
+<!-- middle vase -->
+<!--             <integer name="cropOffsetX" value="7130"/>
+            <integer name="cropOffsetY" value="3710"/>
+            <integer name="cropWidth" value="750"/>
+            <integer name="cropHeight" value="2000"/>
+            <integer name="width" value="15000"/>
+            <integer name="height" value="10000"/> -->
+
+<!-- right vase -->
+<!--             <integer name="cropOffsetX" value="10400"/>
+            <integer name="cropOffsetY" value="3830"/>
+            <integer name="cropWidth" value="750"/>
+            <integer name="cropHeight" value="2000"/>
+            <integer name="width" value="15000"/>
+            <integer name="height" value="10000"/>	 -->
+
+		</film>
+	</sensor>
+
+    <emitter type="envmap">
+        <string name="filename" value="textures/envmap_hd.exr"/>
+        <transform name="toWorld">
+            <rotate y="1" angle="280"/>
+            <rotate x="1" angle="90"/>
+        </transform>
+        <float name="scale" value="0.7"/>
+    </emitter>
+
+
+    <shape type="sphere">
+        <transform name="toWorld">
+            <scale x="20" y="20"/>
+            <translate x="-330" y="-110" z="330"/>
+        </transform>
+        <emitter type="area">
+            <spectrum name="radiance" value="500"/>
+        </emitter>
+        <bsdf type="diffuse">
+            <spectrum name="reflectance" value="0"/>
+        </bsdf>
+    </shape>    
+
+    <shape type="sphere">
+        <transform name="toWorld">
+            <scale x="20" y="20"/>
+            <translate x="-150" y="-440" z="-330"/>
+        </transform>
+        <emitter type="area">
+            <spectrum name="radiance" value="40"/>
+        </emitter>
+        <bsdf type="diffuse">
+            <spectrum name="reflectance" value="0"/>
+        </bsdf>
+    </shape>    
+
+<!-- Table cloth -->
+	<shape type="obj">
+		<transform name="toWorld">
+			<scale x="160" y="160" z="160"/>
+			<translate x="0" y="0" z="-110"/>
+		</transform>
+		<string name="filename" value="meshes/tablecloth_highres.obj"/>
+
+	    <bsdf type="multilayered" id="cloth">
+	        <boolean name="bidir" value="true"/>
+	        <string name="pdf" value="bidirStochTRT"/>
+	        <integer name="stochPdfDepth" value="2"/>
+	        <integer name="pdfRepetitive" value="1"/>
+	        <float name="diffusePdf" value="0.1"/>
+	        <float name="maxSurvivalProb" value="1"/>
+	        
+	        <integer name="nbLayers" value="2"/>
+
+	        <bsdf type="roughdielectric" name="surface_0">
+	          <float name="extIOR" value="1.0"/>
+	          <float name="intIOR" value="1.001"/>
+	          <float name="alpha" value="0.001"/>
+	        </bsdf>
+	        
+	        <boolean name="aniso_0" value="true"/>
+	        <float name="density_0" value="1"/>
+	        <texture name="albedo_tex_0" type="instancedtexture">
+	            <string name="uvTransform" value="1 0 0 -1"/>    
+	            <integer name="divideX" value="5"/>
+	            <integer name="divideY" value="24"/>
+	            <integer name="tileX" value="2009"/>
+	            <integer name="tileY" value="3300"/>
+	            <string name="blockFile" value="textures/damask4_info.dat"/>
+	            <texture type="bitmap">
+	                <string name="filename" value="textures/albedo.exr"/>
+	                <string name="filterType" value="nearest"/>
+	            </texture>
+	        </texture>    
+	        <texture name="orientation_tex_0" type="instancedtexture">      
+	            <string name="uvTransform" value="1 0 0 -1"/>    
+	            <integer name="divideX" value="5"/>
+	            <integer name="divideY" value="24"/>
+	            <integer name="tileX" value="2009"/>
+	            <integer name="tileY" value="3300"/>
+	            <string name="blockFile" value="textures/damask4_info.dat"/>           
+	            <texture type="bitmap">
+	                <string name="filename" value="textures/orientation.exr"/>
+	                <string name="filterType" value="nearest"/>
+	            </texture>
+	        </texture>
+	        <phase type="microflake" name="phase_0">
+	            <float name="stddev" value="0.15"/>
+	        </phase>
+	            
+	        <bsdf type="diffuse" name="surface_1">
+	            <spectrum name="reflectance" value="0.5"/>
+	        </bsdf>
+	    </bsdf>
+	</shape>
+
+<!-- Right vase -->
+	<shape type="obj">
+		<transform name="toWorld">
+			<scale x="1.2" y="1.2" z="1.2"/>
+			<rotate z="1" angle="90"/>
+			<translate x="170" y="30" z="30"/>
+		</transform>
+		<string name="filename" value="meshes/vase1.obj"/>
+		
+		<bsdf type="twosided">		
+			<bsdf type="multilayered" id="material">
+				<boolean name="bidir" value="true"/>
+				<string name="pdf" value="bidirStochTRT"/>
+				<integer name="stochPdfDepth" value="4"/>
+				<integer name="pdfRepetitive" value="1"/>
+				<float name="diffusePdf" value="0.1"/>
+				<float name="maxSurvivalProb" value="1"/>
+				
+				<integer name="nbLayers" value="3"/>
+
+				<bsdf type="roughdielectric" name="surface_0">
+					<float name="extIOR" value="1.0"/>
+					<float name="intIOR" value="1.5"/>
+					<float name="alphaU" value="0.25"/>
+					<float name="alphaV" value="0.05"/>
+				</bsdf>
+				
+				<boolean name="aniso_0" value="true"/>
+				<float name="density_0" value="0.5"/>
+				<spectrum name="albedo_0" value="0.5 0.7 0.95"/>
+				<vector name="orientation_0" x="0.5" y="0.5" z="0"/>
+		        <phase type="microflake" name="phase_0">
+		            <float name="stddev" value="0.05"/>
+		        </phase>
+
+				<bsdf type="roughdielectric" name="surface_1">
+					<float name="extIOR" value="1.5"/>
+					<float name="intIOR" value="1.2"/>
+					<float name="alpha" value="0.01"/>
+				</bsdf>
+			
+				<boolean name="aniso_1" value="true"/>
+				<float name="density_1" value="0.5"/>
+				<spectrum name="albedo_1" value="0.5 0.95 0.5"/>
+				<vector name="orientation_1" x="0.5" y="-0.5" z="0"/>
+		        <phase type="microflake" name="phase_1">
+		            <float name="stddev" value="0.05"/>
+		        </phase>
+			
+				<bsdf type="roughconductor" name="surface_2">
+					<float name="alpha" value="0.05"/>
+				</bsdf>		
+			</bsdf>
+		</bsdf>
+	</shape>
+
+<!-- Middle vase -->
+	<shape type="disk">
+		<transform name="toWorld">
+			<scale x="37" y="37"/>
+			<rotate x="1" angle="180"/>			
+			<translate x="0.3" y="20" z="-101"/>
+		</transform>
+		<bsdf type="roughdielectric">
+			<float name="alpha" value="0.5"/>
+		</bsdf>
+	</shape>
+
+	<shape type="obj">
+		<transform name="toWorld">
+			<scale x="1.2" y="1.2" z="1.2"/>
+			<rotate z="1" angle="180"/>			
+			<translate x="0" y="20" z="53"/>
+		</transform>
+		<string name="filename" value="meshes/vase2.obj"/>
+	
+		<bsdf type="multilayered">
+			<boolean name="bidir" value="true"/>
+			<string name="pdf" value="bidirStochTRT"/>
+			<integer name="stochPdfDepth" value="2"/>
+			<integer name="pdfRepetitive" value="1"/>
+			<float name="diffusePdf" value="0.1"/>
+			<float name="maxSurvivalProb" value="1"/>
+
+			<integer name="nbLayers" value="2"/>
+
+			<bsdf type="roughdielectric" name="surface_0">
+				<float name="extIOR" value="1.0"/>
+				<float name="intIOR" value="1.5"/>
+				<float name="alpha" value="0.01"/>
+			</bsdf>
+			<texture name="normal_tex_0" type="bitmap">
+				<string name="wrapMode" value="clamp"/>
+				<string name="filename" value="textures/long_normal.exr"/>
+			</texture>
+
+			<texture name="sigmaT_tex_0" type="bitmap">
+				<string name="wrapMode" value="clamp"/>
+				<string name="filename" value="textures/long_sigmaT.exr"/>
+			</texture>
+			<spectrum name="sigmaT_0" value="1"/>
+			<texture name="albedo_tex_0" type="bitmap">
+				<string name="wrapMode" value="clamp"/>
+				<string name="filename" value="textures/long_albedo.exr"/>
+			</texture>
+			<spectrum name="albedo_0" value="1"/>
+	        <phase type="hg" name="phase_0">
+	            <float name="g" value="0.8"/>
+	        </phase>
+			
+			<bsdf type="roughdielectric" name="surface_1">
+				<float name="extIOR" value="1.5"/>
+				<float name="intIOR" value="1.0"/>					
+				<float name="alpha" value="0.05"/>
+			</bsdf>
+		</bsdf>
+	</shape>
+
+<!-- Left vase -->
+	<shape type="obj">
+		<transform name="toWorld">
+			<scale x="1.2" y="1.2" z="1.2"/>
+			<rotate z="1" angle="90"/>
+			<translate x="-170" y="20" z="7"/>
+		</transform>
+		<string name="filename" value="meshes/vase3.obj"/>
+	
+		<bsdf type="twosided">		
+			<bsdf type="multilayered">
+				<boolean name="bidir" value="true"/>
+				<string name="pdf" value="bidirStochTRT"/>
+				<integer name="stochPdfDepth" value="2"/>
+				<integer name="pdfRepetitive" value="1"/>
+				<float name="diffusePdf" value="0.1"/>
+				<float name="maxSurvivalProb" value="1"/>
+
+				<integer name="nbLayers" value="2"/>
+				
+				<bsdf type="roughdielectric" name="surface_0">
+					<float name="extIOR" value="1.0"/>
+					<float name="intIOR" value="1.5"/>
+					<float name="alpha" value="0.01"/>
+				</bsdf>
+				<texture name="normal_tex_0" type="bitmap">
+					<string name="wrapMode" value="clamp"/>
+					<string name="filename" value="textures/scratch_normal.exr"/>
+				</texture>		
+
+				<texture name="sigmaT_tex_0" type="bitmap">
+					<string name="wrapMode" value="clamp"/>
+					<string name="filename" value="textures/noise_sigmaT.exr"/>
+				</texture>
+				<spectrum name="sigmaT_0" value="2 1 2"/>
+				<spectrum name="albedo_0" value="0"/>
+		        <phase type="hg" name="phase_0">
+		            <float name="g" value="0.8"/>
+		        </phase>
+				
+				<bsdf type="roughconductor" name="surface_1">
+					<float name="alpha" value="0.05"/>
+					<string name="material" value="Hg"/>
+				</bsdf>	
+				<texture name="normal_tex_1" type="bitmap">
+					<string name="wrapMode" value="clamp"/>
+					<string name="filename" value="textures/noise_normal.exr"/>
+				</texture>				
+			</bsdf>
+		</bsdf>
+	</shape>
+
+</scene>

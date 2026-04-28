@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!-- MI test scene from Eric Veach's thesis - modeled
+     after a file by Steve Marschner (CS667)
+-->
+<scene version="0.6.0">
+	<integrator type="path">
+		<integer name="maxDepth" value="-1"/>
+		<integer name="rrDepth" value="50"/>
+	</integrator>
+
+	<sensor type="perspective">
+		<string name="fovAxis" value="smaller"/>
+		<transform name="toWorld">
+			<scale x="-1"/>
+			<scale x="-1"/>
+			<lookAt origin="0, 2, 15" target="0, -2, 2.5" up="0, 1, 0"/>
+		</transform>
+		<float name="fov" value="28"/>
+
+		<sampler type="independent">
+			<integer name="sampleCount" value="200"/>
+		</sampler>
+
+		<film type="hdrfilm">
+			<integer name="width" value="768"/>
+			<integer name="height" value="512"/>
+			<boolean name="banner" value="false"/>
+			<string name="fileFormat" value="openexr"/>
+		</film>
+	</sensor>
+
+	<bsdf type="layered" id="a">
+		<boolean name="bidir" value="true"/>
+		<string name="pdf" value="bidirStochTRT"/>
+		<integer name="stochPdfDepth" value="2"/>
+		<integer name="pdfRepetitive" value="1"/>
+		<float name="diffusePdf" value="1"/>
+		<boolean name="bidirUseAnalog" value="true"/>
+		<integer name="nbLayers" value="2"/>
+
+		<bsdf type="roughdielectric" name="surface_0">
+			<float name="extIOR" value="1.0"/>
+			<float name="intIOR" value="1.5"/>
+			<float name="alpha" value="0.005"/>
+		</bsdf>
+		
+		<spectrum name="sigmaT_0" value="1"/>
+		<spectrum name="albedo_0" value="0.1 0.5 0.95"/>
+		<phase name="phase_0" type="hg">
+			<float name="g" value="0"/>
+		</phase>	
+	
+		<bsdf type="roughconductor" name="surface_1">
+			<float name="alpha" value="0.005"/>
+			<string name="material" value="Au"/>
+		</bsdf>		
+	</bsdf>
+
+	<bsdf type="layered" id="b">
+		<boolean name="bidir" value="true"/>
+		<string name="pdf" value="bidirStochTRT"/>
+		<integer name="stochPdfDepth" value="2"/>
+		<integer name="pdfRepetitive" value="3"/>
+		<float name="diffusePdf" value="1"/>
+		<boolean name="bidirUseAnalog" value="true"/>
+		<integer name="nbLayers" value="2"/>
+
+		<bsdf type="roughdielectric" name="surface_0">
+			<float name="extIOR" value="1.0"/>
+			<float name="intIOR" value="1.5"/>
+			<float name="alpha" value="0.005"/>
+		</bsdf>
+		
+		<spectrum name="sigmaT_0" value="1"/>
+		<spectrum name="albedo_0" value="0.1 0.5 0.95"/>
+		<phase name="phase_0" type="hg">
+			<float name="g" value="0"/>
+		</phase>	
+
+		<bsdf type="roughconductor" name="surface_1">
+			<float name="alpha" value="0.1"/>
+			<string name="material" value="Au"/>
+		</bsdf>		
+	</bsdf>
+
+	<bsdf type="layered" id="c">
+		<boolean name="bidir" value="true"/>
+		<string name="pdf" value="bidirStochTRT"/>
+		<integer name="stochPdfDepth" value="2"/>
+		<integer name="pdfRepetitive" value="3"/>
+		<float name="diffusePdf" value="1"/>
+		<boolean name="bidirUseAnalog" value="true"/>
+		<integer name="nbLayers" value="2"/>
+
+		<bsdf type="roughdielectric" name="surface_0">
+			<float name="extIOR" value="1.0"/>
+			<float name="intIOR" value="1.5"/>
+			<float name="alpha" value="0.1"/>
+		</bsdf>
+		
+		<spectrum name="sigmaT_0" value="1"/>
+		<spectrum name="albedo_0" value="0.1 0.5 0.95"/>
+		<phase name="phase_0" type="hg">
+			<float name="g" value="0"/>
+		</phase>	
+
+		<bsdf type="roughconductor" name="surface_1">
+			<float name="alpha" value="0.005"/>
+			<string name="material" value="Au"/>
+		</bsdf>		
+	</bsdf>
+
+
+	<bsdf type="layered" id="d">
+		<boolean name="bidir" value="true"/>
+		<string name="pdf" value="bidirStochTRT"/>
+		<integer name="stochPdfDepth" value="2"/>
+		<integer name="pdfRepetitive" value="3"/>
+		<float name="diffusePdf" value="1"/>
+		<boolean name="bidirUseAnalog" value="true"/>
+		<integer name="nbLayers" value="2"/>
+
+		<bsdf type="roughdielectric" name="surface_0">
+			<float name="extIOR" value="1.0"/>
+			<float name="intIOR" value="1.5"/>
+			<float name="alpha" value="0.1"/>
+		</bsdf>
+		
+		<spectrum name="sigmaT_0" value="1"/>
+		<spectrum name="albedo_0" value="0.1 0.5 0.95"/>
+		<phase name="phase_0" type="hg">
+			<float name="g" value="0"/>
+		</phase>	
+	
+		<bsdf type="roughconductor" name="surface_1">
+			<float name="alpha" value="0.1"/>
+			<string name="material" value="Au"/>
+		</bsdf>		
+	</bsdf>
+
+	<emitter type="constant">
+		<spectrum name="radiance" value="0.5"/>
+	</emitter>
+
+	<shape type="sphere">
+		<point name="center" x="-1.25" y="0" z="0"/>
+		<float name="radius" value=".1"/>
+
+		<emitter type="area">
+			<rgb name="radiance" value="100, 100, 100"/>
+		</emitter>
+
+		<bsdf type="diffuse">
+			<rgb name="reflectance" value="0,0,0"/>
+		</bsdf>
+	</shape>
+
+	<shape type="sphere">
+		<point name="center" x="-3.75" y="0" z="0"/>
+		<float name="radius" value=".03333"/>
+
+		<emitter type="area">
+			<rgb name="radiance" value="901.803 901.803 901.803"/>
+		</emitter>
+
+		<bsdf type="diffuse">
+			<rgb name="reflectance" value="0,0,0"/>
+		</bsdf>
+	</shape>
+
+	<shape type="sphere">
+		<point name="center" x="1.25" y="0" z="0"/>
+		<float name="radius" value=".3"/>
+
+		<emitter type="area">
+			<rgb name="radiance" value="11.1111 11.1111 11.1111"/>
+		</emitter>
+
+		<bsdf type="diffuse">
+			<rgb name="reflectance" value="0,0,0"/>
+		</bsdf>
+	</shape>
+
+	<shape type="sphere">
+		<point name="center" x="3.75" y="0" z="0"/>
+		<float name="radius" value=".9"/>
+
+		<emitter type="area">
+			<rgb name="radiance" value="1.23457 1.23457 1.23457"/>
+		</emitter>
+
+		<bsdf type="diffuse">
+			<rgb name="reflectance" value="0,0,0"/>
+		</bsdf>
+	</shape>
+
+	<shape type="obj">
+		<string name="filename" value="meshes/plate1.obj"/>
+
+		<ref id="a"/>
+	</shape>
+
+	<shape type="obj">
+		<string name="filename" value="meshes/plate2.obj"/>
+
+		<ref id="b"/>
+	</shape>
+
+	<shape type="obj">
+		<string name="filename" value="meshes/plate3.obj"/>
+
+		<ref id="c"/>
+	</shape>
+
+	<shape type="obj">
+		<string name="filename" value="meshes/plate4.obj"/>
+
+		<ref id="d"/>
+	</shape>
+
+	<shape type="obj">
+		<string name="filename" value="meshes/floor.obj"/>
+
+		<bsdf type="diffuse">
+			<rgb name="reflectance" value="0.4 0.4 0.4"/>
+		</bsdf>
+	</shape>
+
+</scene>

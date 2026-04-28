@@ -1,0 +1,213 @@
+<!--
+   Hero showcase scene for the LayeredBSDF + grazing emitter.
+
+   Two heroes side-by-side, each coated with a layered material from
+   the same warm family but with a different metal underneath:
+
+     * Stanford bunny (left) — warm pigmented slab over rough COPPER
+       conductor.  Reads as a deep red-amber.
+     * Utah teapot (right) — warm pigmented slab over rough GOLD
+       conductor.  Reads as a yellower amber.
+
+   Both are lit by the custom `grazing` emitter from camera-right at
+   a low angle (the cone clips along the silhouettes and excites the
+   dielectric Fresnel peak), with a dim constant environment fill
+   and a small off-frame warm rim sphere for separation from the
+   back wall.
+
+   What it demonstrates:
+     * The signature look of a layered BSDF: a warm interior body
+       colour from spectral absorption inside the slab, *seen
+       through* a clear dielectric top, and tinting the metal beneath.
+       This is what distinguishes `layered` from `roughplastic`.
+     * Two different conductor bases (Cu vs Au) under an *identical*
+       absorbing slab give visibly different body hues — the layered
+       random walk correctly composes top + slab + bottom.
+     * The grazing emitter's cutoff cone clipping the silhouettes
+       and producing bright Fresnel rims along the back of both
+       objects, plus the long single-edged shadow it casts.
+
+   Render with (from `scenes/`):
+       mitsuba layered_hero.xml -o scene_data/output/layered_hero.exr
+       mtsutil tonemap -g 2.2 scene_data/output/layered_hero.exr
+
+   At 1280x800 / 1024 spp this takes ~3-4 minutes on a 20-core box.
+-->
+<scene version="0.6.0">
+    <integrator type="path">
+        <integer name="maxDepth" value="16"/>
+        <integer name="rrDepth" value="6"/>
+    </integrator>
+
+    <sensor type="perspective">
+        <string name="fovAxis" value="x"/>
+        <float name="fov" value="42"/>
+        <transform name="toWorld">
+            <lookAt origin="3.6, 1.7, 5.4" target="-0.2, 0.55, 0" up="0, 1, 0"/>
+        </transform>
+        <film type="hdrfilm">
+            <integer name="width" value="1280"/>
+            <integer name="height" value="800"/>
+            <boolean name="banner" value="false"/>
+            <string name="fileFormat" value="openexr"/>
+        </film>
+        <sampler type="ldsampler">
+            <integer name="sampleCount" value="1024"/>
+        </sampler>
+    </sensor>
+
+    <!-- ====================================================================
+         Lighting
+         ==================================================================== -->
+
+    <!-- Soft fill: just enough so the shadow side stays readable. -->
+    <emitter type="constant">
+        <spectrum name="radiance" value="0.05"/>
+    </emitter>
+
+    <!-- Key: grazing beam from camera-right, low angle.  Wider cone
+         than the single-hero version so it covers both objects. -->
+    <emitter type="grazing">
+        <spectrum name="intensity" value="280"/>
+        <float name="cutoffAngle" value="22"/>
+        <float name="exponent" value="18"/>
+        <transform name="toWorld">
+            <lookAt origin="6.0, 1.4, -1.0" target="-0.5, 0.6, 0.2" up="0, 1, 0"/>
+        </transform>
+    </emitter>
+
+    <!-- Small warm rim from behind, just for separation from the
+         back wall.  Sized and placed so it sits just above the
+         camera frustum (only its light spills in, the disc itself
+         is off-screen). -->
+    <shape type="sphere">
+        <point name="center" x="-3.0" y="3.4" z="-0.6"/>
+        <float name="radius" value="0.18"/>
+        <emitter type="area">
+            <rgb name="radiance" value="140, 90, 48"/>
+        </emitter>
+        <bsdf type="diffuse">
+            <rgb name="reflectance" value="0,0,0"/>
+        </bsdf>
+    </shape>
+
+    <!-- ====================================================================
+         Materials
+         ==================================================================== -->
+
+    <!-- Hero A: warm "amber over gold" -->
+    <bsdf type="layered" id="amberGold">
+        <integer name="nbLayers" value="2"/>
+
+        <bsdf type="roughdielectric" name="surface_0">
+            <float name="extIOR" value="1.0"/>
+            <float name="intIOR" value="1.5"/>
+            <float name="alpha" value="0.005"/>
+        </bsdf>
+
+        <spectrum name="sigmaT_0" value="1.8"/>
+        <rgb       name="albedo_0" value="0.97 0.65 0.22"/>
+        <phase name="phase_0" type="hg">
+            <float name="g" value="0.0"/>
+        </phase>
+
+        <bsdf type="roughconductor" name="surface_1">
+            <string name="material" value="Au"/>
+            <float name="alpha" value="0.04"/>
+        </bsdf>
+    </bsdf>
+
+    <!-- Hero B: warm "amber over copper".  Same slab, slightly
+         redder albedo to play to copper's natural hue.  Lower sigmaT
+         than the gold variant so the smaller bunny doesn't go too
+         dark under the same key intensity. -->
+    <bsdf type="layered" id="amberCopper">
+        <integer name="nbLayers" value="2"/>
+
+        <bsdf type="roughdielectric" name="surface_0">
+            <float name="extIOR" value="1.0"/>
+            <float name="intIOR" value="1.5"/>
+            <float name="alpha" value="0.005"/>
+        </bsdf>
+
+        <spectrum name="sigmaT_0" value="1.4"/>
+        <rgb       name="albedo_0" value="0.96 0.55 0.18"/>
+        <phase name="phase_0" type="hg">
+            <float name="g" value="0.0"/>
+        </phase>
+
+        <bsdf type="roughconductor" name="surface_1">
+            <string name="material" value="Cu"/>
+            <float name="alpha" value="0.05"/>
+        </bsdf>
+    </bsdf>
+
+    <!-- ====================================================================
+         Hero A: Utah teapot (right of frame), amber-over-gold
+         ==================================================================== -->
+
+    <shape type="obj">
+        <string name="filename" value="meshes/teapot.obj"/>
+        <transform name="toWorld">
+            <!-- Teapot mesh bbox is x[-3,3.43] y[0,3.15] z[-2,2].
+                 Recenter on X, scale to ~2.5 wide, rotate so the
+                 spout faces camera-right, then translate to its
+                 spot on the right side of the stage. -->
+            <translate x="-0.215" y="0" z="0"/>
+            <scale value="0.38"/>
+            <rotate y="1" angle="-25"/>
+            <translate x="1.05" y="0" z="0.1"/>
+        </transform>
+        <ref id="amberGold"/>
+    </shape>
+
+    <!-- ====================================================================
+         Hero B: Stanford bunny (left of frame), amber-over-copper
+         ==================================================================== -->
+
+    <shape type="ply">
+        <string name="filename" value="meshes/bunny.ply"/>
+        <transform name="toWorld">
+            <!-- Bunny mesh bbox is x[-0.095,0.061] y[0.033,0.187]
+                 z[-0.062,0.059].  Recenter, drop feet to y=0, scale
+                 up by ~9 (bunny is ~1.4 tall), rotate so it faces
+                 ~30° toward camera-right (toward the key light), then
+                 translate left. -->
+            <translate x="0.017" y="-0.033" z="0.0015"/>
+            <scale value="11.0"/>
+            <rotate y="1" angle="155"/>
+            <translate x="-1.55" y="0" z="0.35"/>
+        </transform>
+        <ref id="amberCopper"/>
+    </shape>
+
+    <!-- ====================================================================
+         Stage (floor + back wall)
+         ==================================================================== -->
+
+    <!-- Floor: dark grey, very slightly glossy.  Picks up a subtle
+         reflection of the heroes' undersides without distracting. -->
+    <shape type="rectangle">
+        <transform name="toWorld">
+            <scale value="8"/>
+            <rotate x="1" angle="-90"/>
+            <translate y="0" z="0"/>
+        </transform>
+        <bsdf type="roughplastic">
+            <string name="distribution" value="ggx"/>
+            <float name="alpha" value="0.25"/>
+            <rgb name="diffuseReflectance" value="0.10 0.10 0.11"/>
+        </bsdf>
+    </shape>
+
+    <!-- Back wall: matte warm-grey -->
+    <shape type="rectangle">
+        <transform name="toWorld">
+            <scale value="8"/>
+            <translate y="3" z="-3.5"/>
+        </transform>
+        <bsdf type="diffuse">
+            <rgb name="reflectance" value="0.18 0.16 0.14"/>
+        </bsdf>
+    </shape>
+</scene>
