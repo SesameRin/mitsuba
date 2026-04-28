@@ -1,0 +1,57 @@
+<!--
+   Smoke-test scene for the LayeredBSDF + Grazing emitter plugins.
+
+   Renders a sphere with a thin dielectric layer (intIOR=1.5) over a
+   red Lambertian base, lit by a constant environment plus a tight
+   grazing emitter aimed nearly horizontally to make the top-Fresnel
+   rim and the in-layer Beer-Lambert tinting visible.
+-->
+<scene version="0.6.0">
+    <integrator type="path">
+        <integer name="maxDepth" value="8"/>
+    </integrator>
+
+    <sensor type="perspective">
+        <float name="fov" value="35"/>
+        <transform name="toWorld">
+            <lookAt origin="0, 1.2, 4.5" target="0, 0, 0" up="0, 1, 0"/>
+        </transform>
+        <film type="hdrfilm">
+            <integer name="width" value="256"/>
+            <integer name="height" value="256"/>
+            <boolean name="banner" value="false"/>
+        </film>
+        <sampler type="ldsampler">
+            <integer name="sampleCount" value="32"/>
+        </sampler>
+    </sensor>
+
+    <!-- soft fill -->
+    <emitter type="constant">
+        <spectrum name="radiance" value="0.05"/>
+    </emitter>
+
+    <!-- grazing key light, near-horizontal (camera-left) -->
+    <emitter type="grazing">
+        <spectrum name="intensity" value="120"/>
+        <float name="cutoffAngle" value="6"/>
+        <float name="exponent" value="64"/>
+        <transform name="toWorld">
+            <lookAt origin="-4, 0.05, 0.0" target="0, 0, 0" up="0, 1, 0"/>
+        </transform>
+    </emitter>
+
+    <shape type="sphere">
+        <point name="center" x="0" y="0" z="0"/>
+        <float name="radius" value="1"/>
+        <bsdf type="layered">
+            <float name="intIOR" value="1.5"/>
+            <float name="extIOR" value="1.0"/>
+            <float name="thickness" value="0.5"/>
+            <rgb name="sigmaA" value="0.2 0.5 0.8"/>
+            <bsdf type="diffuse">
+                <rgb name="reflectance" value="0.8 0.2 0.2"/>
+            </bsdf>
+        </bsdf>
+    </shape>
+</scene>

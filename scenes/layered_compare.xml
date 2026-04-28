@@ -1,0 +1,56 @@
+<!--
+   Side-by-side comparison: a sphere with `layered` (no scattering) vs.
+   a sphere with `coating + diffuse`. They should render essentially
+   identically (within MC noise) when sigmaS = 0 and sigmaA = 0.
+-->
+<scene version="0.6.0">
+    <integrator type="path">
+        <integer name="maxDepth" value="8"/>
+    </integrator>
+
+    <sensor type="perspective">
+        <float name="fov" value="50"/>
+        <transform name="toWorld">
+            <lookAt origin="0, 0, 5" target="0, 0, 0" up="0, 1, 0"/>
+        </transform>
+        <film type="hdrfilm">
+            <integer name="width" value="384"/>
+            <integer name="height" value="192"/>
+            <boolean name="banner" value="false"/>
+        </film>
+        <sampler type="ldsampler">
+            <integer name="sampleCount" value="64"/>
+        </sampler>
+    </sensor>
+
+    <emitter type="constant">
+        <spectrum name="radiance" value="1.0"/>
+    </emitter>
+
+    <!-- Left: layered BSDF, no scattering, just dielectric over diffuse -->
+    <shape type="sphere">
+        <point name="center" x="-1.4" y="0" z="0"/>
+        <float name="radius" value="1"/>
+        <bsdf type="layered">
+            <float name="intIOR" value="1.5"/>
+            <float name="extIOR" value="1.0"/>
+            <float name="thickness" value="0"/>
+            <bsdf type="diffuse">
+                <rgb name="reflectance" value="0.8 0.4 0.2"/>
+            </bsdf>
+        </bsdf>
+    </shape>
+
+    <!-- Right: coating + diffuse, the analytic equivalent -->
+    <shape type="sphere">
+        <point name="center" x="1.4" y="0" z="0"/>
+        <float name="radius" value="1"/>
+        <bsdf type="coating">
+            <float name="intIOR" value="1.5"/>
+            <float name="extIOR" value="1.0"/>
+            <bsdf type="diffuse">
+                <rgb name="reflectance" value="0.8 0.4 0.2"/>
+            </bsdf>
+        </bsdf>
+    </shape>
+</scene>
